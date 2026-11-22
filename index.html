@@ -440,61 +440,104 @@ var SHARED = (function () {
   }
 
   /* ---------- Протокол (HTML → PDF) ---------- */
+  var DEFAULT_NOTE = 'Онлайн анкетата отразява волята на собствениците, участвали в нея. Решенията се изпълняват съгласно приетите мнозинства и при необходимост се потвърждават от общото събрание по реда на ЗУЕС.';
   function buildProtocolHtml(o) {
-    var s = o.survey, r = o.results, objs = o.objects, byObj = {};
+    var s = o.survey, r = o.results, objs = o.objects, byObj = {}, objName = {};
     o.votes.forEach(function (v) { byObj[v.objectId] = v; });
-    var objName = {}; objs.forEach(function (x) { objName[x.id] = x.name; });
-    var td = 'border:1px solid #cbd5e1;padding:5px 6px;font-size:10.5px;vertical-align:top';
-    var th = td + ';background:#e8eefc;font-weight:bold;text-align:left';
-    var h = ['<html><head><meta charset="utf-8"><style>body{font-family:Arial,Helvetica,sans-serif;color:#0f172a;font-size:12px} h1{font-size:18px;margin:0 0 4px} h2{font-size:14px;margin:18px 0 6px} table{border-collapse:collapse;width:100%}</style></head><body>'];
-    h.push('<div style="font-size:11px;color:#64748b">' + esc(o.appName) + '</div><h1>ПРОТОКОЛ ОТ ОНЛАЙН АНКЕТА</h1>');
-    h.push('<div style="font-size:15px;font-weight:bold;margin:6px 0">' + esc(s.title) + '</div>');
-    h.push('<table style="margin-top:6px"><tr><td style="' + td + ';width:32%">Дата на анкетата</td><td style="' + td + '">' + esc(o.dateText || s.date) + '</td></tr>' +
-      '<tr><td style="' + td + '">Статус</td><td style="' + td + '">' + ({ open: 'отворена', closed: 'приключила', draft: 'чернова' })[s.status] + (s.imported ? ' (прехвърлена от Microsoft Forms)' : '') + '</td></tr>' +
-      '<tr><td style="' + td + '">Гласували обекти</td><td style="' + td + '">' + r.votedObjects + ' от ' + r.totalObjects + (r.proxyVotes ? ' (от тях ' + r.proxyVotes + ' чрез пълномощник)' : '') + '</td></tr>' +
-      '<tr><td style="' + td + '">Представени идеални части</td><td style="' + td + '"><b>' + fmtPct(r.votedPartsPct, 3) + '</b></td></tr>' +
-      '<tr><td style="' + td + '">Кворум (' + fmtPct(r.quorumPct, 0) + ' ид. части)</td><td style="' + td + '"><b>' + (r.quorumMet ? 'ИМА' : 'НЯМА') + '</b></td></tr>' +
-      '<tr><td style="' + td + '">Изготвен</td><td style="' + td + '">' + esc(o.nowText) + '</td></tr></table>');
-    if (s.problem) h.push('<h2>Описание</h2><div style="white-space:pre-wrap">' + esc(s.problem) + '</div>');
-    h.push('<h2>Резултати по въпроси</h2>');
+    objs.forEach(function (x) { objName[x.id] = x.name; });
+    var showTime = !!o.showTime, showAnswers = o.showAnswers !== false && !s.anonymous;
+    var F = 'font-family:Arial,Helvetica,sans-serif;';
+    var BLUE = '#3b6cf6', INK = '#0f172a', MUTE = '#64748b', LINE = '#dbe3f0', SOFT = '#f4f7fd';
+    function bar(segs, h) {
+      var cells = segs.filter(function (x) { return x.w >= 0.4; }), tot = cells.reduce(function (a, x) { return a + x.w; }, 0) || 1;
+      return '<table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;height:' + (h || 16) + 'px"><tr>' + cells.map(function (x) {
+        return '<td style="width:' + (x.w / tot * 100).toFixed(1) + '%;background-color:' + x.c + ';height:' + (h || 16) + 'px;font-size:9px;color:#fff;text-align:center;' + F + '">' + (x.l && x.w > 7 ? esc(x.l) : '&nbsp;') + '</td>';
+      }).join('') + '</tr></table>';
+    }
+    function sq(c) { return '<span style="display:inline-block;width:10px;height:10px;background-color:' + c + ';margin-right:6px">&nbsp;</span>'; }
+    var h = ['<html><head><meta charset="utf-8"><title>' + esc(s.title) + '</title></head><body style="' + F + 'color:' + INK + ';font-size:11px;margin:0">'];
+    // шапка
+    h.push('<table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse"><tr><td style="background-color:' + BLUE + ';padding:18px 20px;' + F + '">' +
+      '<div style="color:#dbe4ff;font-size:10px;letter-spacing:1px">ЕТАЖНА СОБСТВЕНОСТ · ГР. СОФИЯ, УЛ. ЗАЙЧАР 124</div>' +
+      '<div style="color:#ffffff;font-size:20px;font-weight:bold;margin-top:4px">ПРОТОКОЛ ОТ ОНЛАЙН АНКЕТА</div>' +
+      '<div style="color:#ffffff;font-size:14px;margin-top:4px">' + esc(s.title) + '</div></td></tr></table>');
+    // обобщение
+    var qc = r.quorumMet ? '#16a34a' : '#e5484d';
+    function card(label, val, bg, fg) { return '<td style="width:25%;padding:10px 12px;background-color:' + bg + ';border:3px solid #ffffff;' + F + '"><div style="font-size:9px;color:' + (fg ? '#ffffff' : MUTE) + '">' + label + '</div><div style="font-size:16px;font-weight:bold;color:' + (fg || INK) + ';margin-top:2px">' + val + '</div></td>'; }
+    h.push('<table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;margin-top:10px"><tr>' +
+      card('Дата на анкетата', esc(o.dateText || s.date), SOFT) + card('Гласували обекти', r.votedObjects + ' от ' + r.totalObjects, SOFT) +
+      card('Представени ид. части', fmtPct(r.votedPartsPct, 2), SOFT) + card('Кворум ' + fmtPct(r.quorumPct, 0), r.quorumMet ? '✓ ИМА' : '✗ НЯМА', qc, '#ffffff') + '</tr></table>');
+    h.push('<div style="margin:10px 0 3px;font-size:10px;color:' + MUTE + '">Участие по идеални части (линията на кворума е ' + fmtPct(r.quorumPct, 0) + ')</div>');
+    h.push(bar([{ w: r.votedPartsPct, c: r.quorumMet ? '#16a34a' : BLUE, l: 'гласували ' + fmtPct(r.votedPartsPct, 1) }, { w: 100 - r.votedPartsPct, c: '#e2e8f0' }], 18));
+    var meta = ['Статус: ' + ({ open: 'отворена', closed: 'приключила', draft: 'чернова' })[s.status] + (s.imported ? ' (прехвърлена от Microsoft Forms)' : '')];
+    if (r.proxyVotes) meta.push(r.proxyVotes + ' обект(а) гласувал(и) чрез пълномощник');
+    if (s.anonymous) meta.push('анонимна анкета');
+    meta.push('изготвен: ' + esc(o.nowText));
+    h.push('<div style="font-size:9.5px;color:' + MUTE + ';margin-top:4px">' + meta.join(' · ') + '</div>');
+    if (s.problem) h.push('<table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;margin-top:12px"><tr><td style="background-color:' + SOFT + ';border-left:4px solid ' + BLUE + ';padding:10px 12px;' + F + 'font-size:11px;white-space:pre-wrap">' + esc(s.problem) + '</td></tr></table>');
+    // въпроси
+    h.push('<div style="font-size:14px;font-weight:bold;margin:18px 0 4px;color:' + BLUE + '">Резултати по въпроси</div>');
     r.questions.forEach(function (q, i) {
-      h.push('<div style="font-weight:bold;margin:10px 0 4px">' + (i + 1) + '. ' + esc(q.text) + '</div>');
+      h.push('<table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;margin-top:10px;border:1px solid ' + LINE + '"><tr><td style="padding:10px 12px;' + F + '">');
+      h.push('<table cellpadding="0" cellspacing="0" style="border-collapse:collapse"><tr><td style="background-color:' + BLUE + ';color:#fff;font-weight:bold;font-size:11px;width:20px;height:20px;text-align:center;' + F + '">' + (i + 1) + '</td><td style="padding-left:8px;font-weight:bold;font-size:12px;' + F + '">' + esc(q.text) + '</td></tr></table>');
       if (q.type === 'text') {
-        h.push('<table><tr><th style="' + th + ';width:22%">Обект</th><th style="' + th + '">Отговор</th></tr>' +
-          (q.texts.length ? q.texts.map(function (t) { return '<tr><td style="' + td + '">' + (s.anonymous ? '—' : esc(objName[t.objectId] || '')) + '</td><td style="' + td + '">' + esc(t.text) + '</td></tr>'; }).join('')
-            : '<tr><td style="' + td + '" colspan="2">няма отговори</td></tr>') + '</table>');
+        h.push('<div style="margin-top:8px">' + (q.texts.length ? q.texts.map(function (t) {
+          return '<div style="background-color:' + SOFT + ';padding:6px 8px;margin-top:4px;font-size:10.5px">' + (showAnswers && t.objectId ? '<b>' + esc(objName[t.objectId] || '') + ':</b> ' : '') + esc(t.text) + '</div>';
+        }).join('') : '<div style="color:' + MUTE + '">няма отговори</div>') + '</div></td></tr></table>');
         return;
       }
-      h.push('<table><tr><th style="' + th + '">Отговор</th><th style="' + th + ';width:13%">Брой</th><th style="' + th + ';width:17%">% от гласувалите</th><th style="' + th + ';width:17%">% от представените ид.ч.</th><th style="' + th + ';width:17%">% от всички ид.ч.</th></tr>');
+      var segs = q.options.map(function (op) { return { w: op.pctParts, c: op.color, l: op.text }; });
+      if (q.type !== 'multi') segs.push({ w: Math.max(0, 100 - r.votedPartsPct), c: '#e2e8f0', l: '' });
+      h.push('<div style="margin:9px 0 3px;font-size:9.5px;color:' + MUTE + '">' + (q.type === 'multi' ? 'Брой гласове по отговори (може повече от един отговор)' : 'Разпределение на идеалните части на цялата сграда') + '</div>');
+      if (q.type === 'multi') {
+        q.options.forEach(function (op) {
+          h.push('<table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;margin-top:3px"><tr><td style="width:28%;font-size:10px;' + F + '">' + esc(op.text) + '</td><td style="width:62%">' + bar([{ w: op.pctVoters, c: op.color }, { w: 100 - op.pctVoters, c: '#eef2f7' }], 10) + '</td><td style="width:10%;text-align:right;font-size:10px;font-weight:bold;' + F + '">' + fmtPct(op.pctVoters, 0) + '</td></tr></table>');
+        });
+      } else h.push(bar(segs, 18));
+      h.push('<table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;margin-top:8px;font-size:10px"><tr>' +
+        ['Отговор', 'Брой', '% от гласувалите', '% от представените', '% от всички ид.ч.'].map(function (t, k) { return '<td style="padding:5px 6px;background-color:' + SOFT + ';color:' + MUTE + ';font-weight:bold;' + (k ? 'text-align:right;' : '') + F + '">' + t + '</td>'; }).join('') + '</tr>');
       q.options.forEach(function (op) {
-        h.push('<tr><td style="' + td + '">' + esc(op.text) + '</td><td style="' + td + '">' + op.count + '</td><td style="' + td + '">' + fmtPct(op.pctVoters) +
-          '</td><td style="' + td + '">' + fmtPct(op.pctRepr, 2) + '</td><td style="' + td + '"><b>' + fmtPct(op.pctParts, 3) + '</b></td></tr>');
+        h.push('<tr><td style="padding:5px 6px;border-bottom:1px solid ' + LINE + ';' + F + '">' + sq(op.color) + '<b>' + esc(op.text) + '</b></td>' +
+          [op.count, fmtPct(op.pctVoters), fmtPct(op.pctRepr, 2), '<b>' + fmtPct(op.pctParts, 3) + '</b>'].map(function (t) { return '<td style="padding:5px 6px;border-bottom:1px solid ' + LINE + ';text-align:right;' + F + '">' + t + '</td>'; }).join('') + '</tr>');
       });
       h.push('</table>');
-      if (q.decision) h.push('<div style="margin-top:4px">Изискуемо мнозинство: ' + esc(q.decision.rule) + ' → <b>' + (q.decision.passed ? 'РЕШЕНИЕТО Е ПРИЕТО' : 'РЕШЕНИЕТО НЕ Е ПРИЕТО') + '</b>' +
-        (q.decision.needQuorum ? ' (няма кворум)' : '') + '</div>');
+      if (q.decision) {
+        var d = q.decision, ok = d.passed, bg = d.needQuorum ? '#94a3b8' : ok ? '#16a34a' : '#e5484d';
+        h.push('<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-top:9px"><tr><td style="background-color:' + bg + ';color:#fff;font-weight:bold;padding:6px 12px;font-size:11px;' + F + '">' +
+          (d.needQuorum ? 'НЯМА КВОРУМ – РЕШЕНИЕТО НЕ Е ПРИЕТО' : ok ? '✓ РЕШЕНИЕТО Е ПРИЕТО' : '✗ РЕШЕНИЕТО НЕ Е ПРИЕТО') + '</td><td style="padding:6px 10px;font-size:10px;color:' + MUTE + ';' + F + '">изискване: ' + esc(d.rule) + ' · „' + esc(d.yes) + '“ = ' + fmtPct(d.yesPctParts, 2) + ' от всички ид.ч.</td></tr></table>');
+      }
+      h.push('</td></tr></table>');
     });
-    h.push('<h2>Гласуване по обекти</h2><table><tr><th style="' + th + '">Обект</th><th style="' + th + '">Ид. ч. %</th>');
-    s.questions.forEach(function (q, i) { h.push('<th style="' + th + '">В' + (i + 1) + '</th>'); });
-    h.push('<th style="' + th + '">Време</th></tr>');
-    objs.forEach(function (ob) {
-      var v = byObj[ob.id];
-      h.push('<tr><td style="' + td + '">' + esc(ob.name) + (v && v.proxyBy ? '<br><span style="color:#64748b">чрез ' + esc(objName[v.proxyBy] || v.proxyBy) + '</span>' : '') + '</td><td style="' + td + '">' + String(ob.part).replace('.', ',') + '</td>');
-      s.questions.forEach(function (q) {
-        h.push('<td style="' + td + '">' + (v ? (s.anonymous ? '✓' : esc(answerText(q, v.answers[q.id]))) : '<span style="color:#94a3b8">не е гласувал</span>') + '</td>');
+    // по обекти
+    h.push('<div style="font-size:14px;font-weight:bold;margin:18px 0 6px;color:' + BLUE + '">Гласуване по обекти</div>');
+    var cols = ['Обект', 'Ид. ч. %'];
+    if (showAnswers) s.questions.forEach(function (q, i) { cols.push('В' + (i + 1)); }); else cols.push('Гласувал');
+    if (showTime) cols.push('Време');
+    h.push('<table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;font-size:10px"><tr>' + cols.map(function (c) { return '<td style="padding:6px;background-color:' + BLUE + ';color:#fff;font-weight:bold;' + F + '">' + c + '</td>'; }).join('') + '</tr>');
+    objs.forEach(function (ob, idx) {
+      var v = byObj[ob.id], bg = idx % 2 ? '#ffffff' : SOFT, td = 'padding:5px 6px;background-color:' + bg + ';border-bottom:1px solid ' + LINE + ';' + F;
+      var row = '<tr><td style="' + td + (v ? 'font-weight:bold' : 'color:#94a3b8') + '">' + esc(ob.name) + (v && v.proxyBy ? '<div style="font-weight:normal;color:' + MUTE + ';font-size:9px">чрез ' + esc(objName[v.proxyBy] || v.proxyBy) + '</div>' : '') + '</td><td style="' + td + (v ? '' : 'color:#94a3b8') + '">' + String(ob.part).replace('.', ',') + '</td>';
+      if (showAnswers) s.questions.forEach(function (q) {
+        if (!v) { row += '<td style="' + td + 'color:#94a3b8">—</td>'; return; }
+        var a = v.answers[q.id], col = INK;
+        if (q.type === 'single') { var op = q.options.filter(function (x) { return x.id === a; })[0]; if (op) col = optColor(op.text, q.options.indexOf(op)); }
+        row += '<td style="' + td + 'color:' + col + ';font-weight:bold">' + esc(answerText(q, a)) + '</td>';
       });
-      h.push('<td style="' + td + '">' + (v ? esc(o.fmt(v.updatedAt || v.createdAt)) : '') + '</td></tr>');
+      else row += '<td style="' + td + (v ? 'color:#16a34a;font-weight:bold">✓ да' : 'color:#94a3b8">не') + '</td>';
+      if (showTime) row += '<td style="' + td + 'color:' + MUTE + '">' + (v ? esc(o.fmt(v.updatedAt || v.createdAt)) : '') + '</td>';
+      h.push(row + '</tr>');
     });
     h.push('</table>');
-    h.push('<p style="font-size:10.5px;color:#64748b;margin-top:14px">Онлайн анкетата отразява мнението на собствениците и не замества решение на общо събрание по ЗУЕС, освен ако общото събрание не я приеме.</p>');
-    h.push('<table style="margin-top:36px"><tr><td style="width:50%;font-size:12px">Изготвил: ............................................<br><span style="color:#64748b">домоуправител</span></td>' +
-      '<td style="font-size:12px">Дата: ....................</td></tr></table></body></html>');
+    var note = o.note == null || o.note === '' ? DEFAULT_NOTE : o.note;
+    if (note) h.push('<table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;margin-top:14px"><tr><td style="background-color:' + SOFT + ';padding:9px 12px;font-size:10px;color:#334155;' + F + 'white-space:pre-wrap">' + esc(note) + '</td></tr></table>');
+    h.push('<table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;margin-top:34px"><tr><td style="width:55%;font-size:11px;' + F + '">Изготвил: ............................................<br><span style="color:' + MUTE + '">домоуправител</span></td><td style="font-size:11px;' + F + '">Дата: ....................</td></tr></table>');
+    h.push('</body></html>');
     return h.join('');
   }
 
   return { esc: esc, fmtPct: fmtPct, optColor: optColor, uid: uid, code6: code6, objKey: objKey, isOpen: isOpen, MAJORITY: MAJORITY,
     normalizeSurvey: normalizeSurvey, calcResults: calcResults, answerText: answerText, answersList: answersList,
-    buildVoteEmail: buildVoteEmail, buildInviteEmail: buildInviteEmail, buildProtocolHtml: buildProtocolHtml };
+    buildVoteEmail: buildVoteEmail, buildInviteEmail: buildInviteEmail, buildProtocolHtml: buildProtocolHtml, DEFAULT_NOTE: DEFAULT_NOTE };
 })();
 
 /* =====================================================================
@@ -667,11 +710,12 @@ function CORE(store) {
       if (u && !/^https:\/\//.test(u)) throw new Error('Адресът трябва да започва с https://');
       store.setProp('PUBLIC_URL', u.replace(/[?#].*$/, ''));
     }
+    if (patch && patch.protocolNote !== undefined) store.setProp('PROTOCOL_NOTE', String(patch.protocolNote || '').slice(0, 2000));
     if (patch && patch.newPassword) {
       if (String(patch.newPassword).length < 4) throw new Error('Паролата трябва да е поне 4 знака.');
       store.setProp('ADMIN_KEY', String(patch.newPassword));
     }
-    return { publicUrl: store.getProp('PUBLIC_URL') || '', scriptUrl: store.scriptUrl(), quota: store.quota() };
+    return { publicUrl: store.getProp('PUBLIC_URL') || '', scriptUrl: store.scriptUrl(), quota: store.quota(), protocolNote: store.getProp('PROTOCOL_NOTE') || S.DEFAULT_NOTE };
   };
   api.adminList = function (key) {
     checkAdmin(key);
@@ -748,14 +792,43 @@ function CORE(store) {
     });
     return { objects: sent, emails: mails, skipped: skipped, quota: store.quota() };
   };
-  api.adminProtocol = function (key, surveyId) {
-    checkAdmin(key);
+  function protocolDoc(surveyId, opts) {
+    opts = opts || {};
     var s = findSurvey(surveyId), objs = store.getObjects(), votes = store.getVotes(s.id);
     var html = S.buildProtocolHtml({ survey: s, results: S.calcResults(s, votes, objs), votes: votes, objects: objs, appName: APP,
-      fmt: store.fmt, nowText: store.fmt(Date.now()), dateText: (s.date || '').split('-').reverse().join('.') });
+      fmt: store.fmt, nowText: store.fmt(Date.now()), dateText: (s.date || '').split('-').reverse().join('.'),
+      showTime: !!opts.showTime, showAnswers: opts.showAnswers !== false, note: store.getProp('PROTOCOL_NOTE') });
     var name = 'Протокол – ' + s.title.replace(/[\\\/:*?"<>|]/g, '').slice(0, 60) + ' – ' + (s.date || '') + '.pdf';
-    var pdf = store.makePdf(html, name);
-    return { html: html, name: name, base64: pdf ? pdf.base64 : '', url: pdf ? pdf.url : '' };
+    return { s: s, html: html, name: name, votes: votes, objs: objs };
+  }
+  api.adminProtocol = function (key, surveyId, opts) {
+    checkAdmin(key);
+    var d = protocolDoc(surveyId, opts), pdf = store.makePdf(d.html, d.name);
+    return { html: d.html, name: d.name, base64: pdf ? pdf.base64 : '', url: pdf ? pdf.url : '' };
+  };
+  api.adminSendProtocol = function (key, surveyId, opts, mode) {
+    checkAdmin(key);
+    var d = protocolDoc(surveyId, opts), voted = d.votes.map(function (v) { return v.objectId; }), to = [], objsSent = 0;
+    d.objs.forEach(function (o) {
+      if (mode === 'voted' && voted.indexOf(o.id) < 0) return;
+      if (!o.emails.length) return;
+      objsSent++;
+      o.emails.forEach(function (e) { if (to.indexOf(e) < 0) to.push(e); });
+    });
+    if (!to.length) throw new Error('Няма имейли за изпращане.');
+    var pdf = store.makePdf(d.html, d.name);
+    var r = S.calcResults(d.s, d.votes, d.objs);
+    var body = '<p style="margin:0 0 12px">Здравейте,</p><p style="margin:0 0 12px">Изпращаме ви протокола от анкетата <b>' + S.esc(d.s.title) + '</b>.</p>' +
+      '<div style="background:#f4f7fd;border-radius:12px;padding:14px 16px;margin:0 0 14px;font-size:14px">Гласували: <b>' + r.votedObjects + ' от ' + r.totalObjects + '</b> обекта · <b>' + S.fmtPct(r.votedPartsPct, 2) + '</b> ид. части · кворум: <b style="color:' + (r.quorumMet ? '#16a34a">има' : '#e5484d">няма') + '</b></div>' +
+      r.questions.filter(function (q) { return q.decision; }).map(function (q) {
+        return '<div style="margin:6px 0;font-size:14px">' + S.esc(q.text.length > 120 ? q.text.slice(0, 120) + '…' : q.text) + ' – <b style="color:' + (q.decision.passed ? '#16a34a">ПРИЕТО' : '#e5484d">НЕ Е ПРИЕТО') + '</b></div>';
+      }).join('') + '<p style="margin-top:14px">Пълният протокол е в прикачения PDF файл.</p>';
+    var html = '<div style="font-family:Arial,Helvetica,sans-serif;color:#1e293b;max-width:600px;margin:0 auto"><div style="background:#3b6cf6;color:#fff;border-radius:16px 16px 0 0;padding:22px 24px"><div style="font-size:13px;opacity:.85">' + S.esc(APP) +
+      '</div><div style="font-size:21px;font-weight:bold;margin-top:4px">Протокол от анкета</div><div style="font-size:14px;margin-top:6px">' + S.esc(d.s.title) + '</div></div><div style="border:1px solid #e2e8f0;border-top:0;border-radius:0 0 16px 16px;padding:22px 24px">' + body + '</div></div>';
+    var n = store.sendMail({ to: [], bcc: to, subject: 'Протокол: ' + d.s.title, html: html, text: 'Протокол от анкетата „' + d.s.title + '“ – в прикачения PDF файл.',
+      attachments: pdf ? [{ name: d.name, base64: pdf.base64, blob: pdf.blob }] : [] });
+    if (!n) throw new Error('Имейлът не беше изпратен (лимит или грешка в Gmail).');
+    return { objects: objsSent, emails: to.length, quota: store.quota() };
   };
   api.adminImportSurvey = function (key, survey, votes) {
     checkAdmin(key);
@@ -805,7 +878,7 @@ window.__UI = UI;
 var FN = ['apiListSurveys', 'apiResolveCode', 'apiGetSurvey', 'apiSubmitVote', 'apiGetVoteForEdit', 'apiUpdateVote',
   'adminLogin', 'adminSettings', 'adminList', 'adminSaveSurvey', 'adminSetStatus', 'adminDeleteSurvey', 'adminUploadMedia',
   'adminGetVotes', 'adminDeleteVote', 'adminGetObjects', 'adminSaveObjects', 'adminRegenCode', 'adminLinks', 'adminSendInvites',
-  'adminProtocol', 'adminImportSurvey'];
+  'adminProtocol', 'adminSendProtocol', 'adminImportSurvey'];
 var API = {};
 if (IS_GAS) {
   FN.forEach(function (n) {
@@ -874,7 +947,7 @@ function demoApi() {
     updateVote: function (v) { var i = db.votes.findIndex(function (x) { return x.id === v.id; }); if (i >= 0) db.votes[i] = JSON.parse(JSON.stringify(v)); },
     deleteVote: function (id) { db.votes = db.votes.filter(function (v) { return v.id !== id; }); },
     deleteVotesOfSurvey: function (id) { db.votes = db.votes.filter(function (v) { return v.surveyId !== id; }); },
-    sendMail: function (m) { UI.outbox.push(m); return m.to.length; },
+    sendMail: function (m) { UI.outbox.push(m); return (m.to && m.to.length) || (m.bcc || []).length; },
     quota: function () { return 100 - UI.outbox.length; },
     getProp: function (k) { return db.props[k] || ''; },
     setProp: function (k, v) { db.props[k] = v; },
@@ -1120,7 +1193,7 @@ function viewThanks(r, s) {
 }
 function showMail(i) {
   var m = UI.outbox[i == null ? UI.outbox.length - 1 : i]; if (!m) return;
-  var el = modal('Имейл (демо)', '<div class="muted small" style="margin-bottom:12px">До: ' + E(m.to.join(', ')) + '<br>Тема: ' + E(m.subject) + '</div>' + m.html);
+  var el = modal('Имейл (демо)', '<div class="muted small" style="margin-bottom:12px">' + (m.to && m.to.length ? 'До: ' + E(m.to.join(', ')) : 'До: вас') + (m.bcc && m.bcc.length ? '<br>Скрито копие: ' + E(m.bcc.join(', ')) : '') + '<br>Тема: ' + E(m.subject) + (m.attachments && m.attachments.length ? '<br>📎 ' + E(m.attachments.map(function (a) { return a.name; }).join(', ')) : '') + '</div>' + m.html);
   el.addEventListener('click', function (e) {
     var a = e.target.closest('a'); if (!a) return;
     var href = a.getAttribute('href') || ''; if (href.charAt(0) !== '?') return;
@@ -1317,20 +1390,46 @@ function invite(id, mode) {
 }
 
 /* ---- протокол ---- */
+UI.protoOpts = { showTime: false, showAnswers: true };
 function protocol(id) {
-  toast('Подготвям протокола…');
-  API.adminProtocol(UI.key, id).then(function (r) {
-    var inner = '<div class="tools" style="margin:0 0 12px">';
-    if (r.base64) {
-      var bin = atob(r.base64), arr = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
-      var url = URL.createObjectURL(new Blob([arr], { type: 'application/pdf' }));
-      inner += '<a class="btn pri" href="' + url + '" download="' + E(r.name) + '">⬇ Изтегли PDF</a>';
-    }
-    if (r.url) inner += '<a class="btn ghost" href="' + E(r.url) + '" target="_blank" rel="noopener">Отвори в Google Drive ↗</a>';
-    if (!r.base64) inner += '<span class="muted small">В демото се показва само преглед. В истинската система се създава PDF и се записва в Google Drive.</span>';
-    inner += '</div><iframe class="frame" sandbox="" srcdoc="' + E(r.html) + '"></iframe>';
-    modal('📄 Протокол', inner, true);
-  }).catch(function (e) { toast(e.message, true); });
+  var x = (UI.adminList || []).filter(function (y) { return y.survey.id === id; })[0], anon = x && x.survey.anonymous;
+  var el = modal('📄 Протокол', '<div class="row" style="align-items:center;gap:8px 18px;margin-bottom:10px">' +
+    '<label class="switch" style="margin:0;flex:none"><input type="checkbox" id="pTime"' + (UI.protoOpts.showTime ? ' checked' : '') + '> Колона „Време“</label>' +
+    '<label class="switch" style="margin:0;flex:none"><input type="checkbox" id="pAns"' + (UI.protoOpts.showAnswers && !anon ? ' checked' : '') + (anon ? ' disabled' : '') + '> Отговори по обекти' + (anon ? ' (анонимна)' : '') + '</label></div>' +
+    '<div class="tools" id="pTools" style="margin:0 0 12px"></div><div id="pBody"><div class="spin"></div></div>', true);
+  function load() {
+    el.querySelector('#pBody').innerHTML = '<div class="spin"></div>'; el.querySelector('#pTools').innerHTML = '';
+    API.adminProtocol(UI.key, id, UI.protoOpts).then(function (r) {
+      var t = '';
+      if (r.base64) {
+        var bin = atob(r.base64), arr = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+        t += '<a class="btn ghost" href="' + URL.createObjectURL(new Blob([arr], { type: 'application/pdf' })) + '" download="' + E(r.name) + '">⬇ Изтегли PDF</a>';
+      }
+      if (r.url) t += '<a class="btn ghost" href="' + E(r.url) + '" target="_blank" rel="noopener">Google Drive ↗</a>';
+      t += '<button class="btn pri" id="pSend">✉️ Изпрати на собствениците</button>';
+      el.querySelector('#pTools').innerHTML = t;
+      el.querySelector('#pBody').innerHTML = '<iframe class="frame" sandbox="" srcdoc="' + E(r.html) + '"></iframe>' + (API.demo ? '<div class="hint">Демо: PDF не се създава, имейлът се показва тук.</div>' : '');
+      el.querySelector('#pSend').onclick = function () { sendProtocol(id); };
+    }).catch(function (e) { el.querySelector('#pBody').innerHTML = '<div class="empty">⚠️ ' + E(e.message) + '</div>'; });
+  }
+  el.querySelector('#pTime').onchange = function () { UI.protoOpts.showTime = this.checked; load(); };
+  el.querySelector('#pAns').onchange = function () { UI.protoOpts.showAnswers = this.checked; load(); };
+  load();
+}
+function sendProtocol(id) {
+  var el = modal('✉️ Изпращане на протокола', '<p style="margin-top:0">Протоколът ще бъде изпратен като PDF файл с кратко резюме. Получателите са на <b>скрито копие</b> (не виждат имейлите си един на друг), а вие получавате копие.</p>' +
+    '<label class="switch"><input type="radio" name="pm" value="all" checked> На всички собственици с имейл</label>' +
+    '<label class="switch"><input type="radio" name="pm" value="voted"> Само на гласувалите</label>' +
+    '<div class="tools" style="margin-top:16px"><button class="btn pri" id="pGo">Изпрати</button></div>');
+  el.querySelector('#pGo').onclick = function () {
+    var mode = el.querySelector('input[name=pm]:checked').value, b = this;
+    b.disabled = true; b.textContent = 'Изпращане…';
+    API.adminSendProtocol(UI.key, id, UI.protoOpts, mode).then(function (r) {
+      el.remove();
+      modal('Изпратено ✓', '<p>Протоколът е изпратен до <b>' + r.objects + '</b> обекта (' + r.emails + ' адреса).</p>' + (r.quota != null ? '<p class="muted small">Оставащи имейли за днес: ' + r.quota + '</p>' : '') +
+        (API.demo ? '<div class="tools"><button class="btn ghost sm" data-act="mail" data-close>Виж имейла (демо)</button></div>' : ''));
+    }).catch(function (e) { toast(e.message, true); b.disabled = false; b.textContent = 'Изпрати'; });
+  };
 }
 
 /* ---- обекти ---- */
@@ -1363,6 +1462,7 @@ function adminSettingsView() {
     var h = adminHead('settings') + '<div class="card"><h2>Адрес на сайта</h2><div class="muted small">Адресът, който се слага в личните линкове и в имейлите. Ако сайтът е в GitHub Pages, поставете го тук (напр. https://zaichar124.github.io). Празно = адресът на Google.</div>' +
       '<label class="field"><span>Публичен адрес</span><input class="inp" id="pubUrl" placeholder="https://…" value="' + E(c.publicUrl) + '"></label><div class="hint">Адрес в Google: ' + E(c.scriptUrl || '—') + '</div>' +
       '<div class="tools"><button class="btn pri sm" data-act="setsave">Запази адреса</button></div></div>' +
+      '<div class="card"><h2>Текст в края на протокола</h2><div class="muted small">Показва се в долната част на всеки протокол. Празно = текстът по подразбиране.</div><label class="field"><textarea class="inp" id="pNote" style="min-height:90px">' + E(c.protocolNote || '') + '</textarea></label><div class="tools"><button class="btn pri sm" data-act="notesave">Запази текста</button></div></div>' +
       '<div class="card"><h2>Админ парола</h2><label class="field"><span>Нова парола</span><input class="inp" id="newPass" type="password" autocomplete="new-password" placeholder="поне 4 знака"></label><div class="tools"><button class="btn ghost sm" data-act="setpass">Смени паролата</button></div></div>' +
       '<div class="card"><h2>Имейли</h2><div class="muted">Оставащи имейли за днес: <b>' + (c.quota == null ? '—' : c.quota) + '</b> (Gmail позволява около 100 адреса на ден).</div></div>';
     set(h);
@@ -1593,6 +1693,7 @@ document.addEventListener('click', function (e) {
     case 'objsave': API.adminSaveObjects(UI.key, collectObjs()).then(function () { toast('Обектите са запазени ✓'); adminObjects(); }).catch(function (er) { toast(er.message, true); }); break;
     case 'regen': confirmBox('Нов личен код за ' + objName(id) + '? Старият линк ще спре да работи.', function () { API.adminRegenCode(UI.key, id).then(function () { toast('Нов код ✓'); adminObjects(); }).catch(function (er) { toast(er.message, true); }); }, 'Нов код'); break;
     case 'setsave': API.adminSettings(UI.key, { publicUrl: document.getElementById('pubUrl').value }).then(function (c) { UI.cfg.publicUrl = c.publicUrl || c.scriptUrl; toast('Запазено ✓'); }).catch(function (er) { toast(er.message, true); }); break;
+    case 'notesave': API.adminSettings(UI.key, { protocolNote: document.getElementById('pNote').value }).then(function () { toast('Текстът е запазен ✓'); }).catch(function (er) { toast(er.message, true); }); break;
     case 'setpass': var np = document.getElementById('newPass').value; API.adminSettings(UI.key, { newPassword: np }).then(function () { UI.key = np; toast('Паролата е сменена ✓'); }).catch(function (er) { toast(er.message, true); }); break;
     case 'import': viewImport(); break;
     case 'impgo': doImport(); break;
