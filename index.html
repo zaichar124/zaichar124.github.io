@@ -1168,8 +1168,7 @@ function renderSurvey() {
       if (q.majority && q.majority !== 'none') h += '<div class="hint">За приемане: ' + E(SHARED.MAJORITY[q.majority].label.toLowerCase()) + '</div>';
       h += '</div>';
     });
-    if (!s.anonymous) h += '<div class="card"><label class="field" style="margin:0"><span>Вашето име (по желание)</span><input class="inp" id="vname" maxlength="120" placeholder="напр. Иван Петров" value="' + E(sel.name) + '"></label></div>';
-    else h += '<div class="card muted small">🕶 Анонимна анкета: другите собственици и домоуправителят виждат само, че обектът е гласувал, без отговорите му.</div>';
+    if (s.anonymous) h += '<div class="card muted small">🕶 Анонимна анкета: другите собственици и домоуправителят виждат само, че обектът е гласувал, без отговорите му.</div>';
     h += submitBar();
   }
   h += resultsHtml(d.results);
@@ -1382,7 +1381,7 @@ function adminVotes(id) {
     var h = '<div class="row" style="align-items:center;margin-top:18px"><div><h1 style="margin:0">' + E(s.title) + '</h1><div class="muted small">Гласове по обекти' + (s.anonymous ? ' · 🕶 анонимна – отговорите не се показват' : '') + '</div></div><div style="flex:none"><button class="btn ghost sm" data-act="admin">← Назад</button></div></div>';
     h += '<div class="card"><div class="scroll"><table class="tbl"><thead><tr><th>Обект</th><th>Ид. ч.</th>';
     s.questions.forEach(function (q, i) { h += '<th title="' + E(q.text) + '">В' + (i + 1) + '</th>'; });
-    h += '<th>Име</th><th>Час</th><th></th></tr></thead><tbody>';
+    h += '<th>Час</th><th></th></tr></thead><tbody>';
     d.objects.forEach(function (o) {
       var v = by[o.id];
       h += '<tr class="' + (v ? '' : 'no') + '"><td><b>' + E(o.name) + '</b>' + (v && v.proxyBy ? '<div class="small muted">чрез ' + E(objName(v.proxyBy)) + '</div>' : '') + '</td><td>' + P(o.part, 3) + '</td>';
@@ -1391,7 +1390,7 @@ function adminVotes(id) {
         var col = v && v.answers && q.type === 'single' ? (function () { var op = q.options.filter(function (x) { return x.id === v.answers[q.id]; })[0]; return op ? SHARED.optColor(op.text, q.options.indexOf(op)) : ''; })() : '';
         h += '<td' + (col ? ' style="color:' + col + ';font-weight:700"' : '') + '>' + E(t) + '</td>';
       });
-      h += '<td>' + (v ? E(v.name || '') : '<span class="small">не е гласувал</span>') + '</td><td class="small">' + (v ? E(fmtTime(v.updatedAt || v.createdAt)) + (v.updatedAt ? ' ✏️' : '') : '') + '</td><td>' + (v ? '<button class="btn danger sm" data-act="vdel" data-id="' + E(v.id) + '" data-s="' + E(s.id) + '">Анулирай</button>' : '') + '</td></tr>';
+      h += '<td class="small">' + (v ? '' : 'не е гласувал') +  + (v ? E(fmtTime(v.updatedAt || v.createdAt)) + (v.updatedAt ? ' ✏️' : '') : '') + '</td><td>' + (v ? '<button class="btn danger sm" data-act="vdel" data-id="' + E(v.id) + '" data-s="' + E(s.id) + '">Анулирай</button>' : '') + '</td></tr>';
     });
     h += '</tbody></table></div></div>' + resultsHtml(d.results, 'Резултати');
     set(h);
