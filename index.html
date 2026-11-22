@@ -197,6 +197,15 @@ textarea.inp{min-height:84px;resize:vertical}
 .frame{width:100%;height:70vh;border:0;background:#fff}
 .anon{background:#f5f3ff;color:#6d28d9}
 
+.files{display:grid;gap:8px;margin-top:12px}
+.file{display:flex;align-items:center;gap:12px;border:1px solid var(--line);border-radius:14px;padding:10px 12px;background:#fff}
+.ficon{flex:none;width:40px;height:46px;border-radius:8px;background:linear-gradient(160deg,#ef4444,#b91c1c);color:#fff;font-weight:800;font-size:11px;display:grid;place-items:center;letter-spacing:.04em}
+.fmeta{flex:1;min-width:0}
+.fmeta b{display:block;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fmeta small{color:var(--mute);font-size:12px}
+.fbtns{display:flex;gap:8px;flex:none}
+@media (max-width:640px){.file{flex-wrap:wrap}.fbtns{width:100%}.fbtns .btn{flex:1;justify-content:center}}
+
 </style>
 </head>
 <body>
@@ -279,6 +288,11 @@ var SHARED = (function () {
     return q.options[0];
   }
 
+  function cleanFiles(list) {
+    return (Array.isArray(list) ? list : []).filter(function (f) { return f && f.url; }).slice(0, 20).map(function (f) {
+      return { name: String(f.name || 'документ.pdf').slice(0, 150), url: String(f.url), preview: String(f.preview || ''), fileId: String(f.fileId || ''), size: Number(f.size) || 0 };
+    });
+  }
   function normalizeSurvey(s) {
     s = s || {};
     var out = {
@@ -296,6 +310,7 @@ var SHARED = (function () {
       status: ['draft', 'open', 'closed'].indexOf(s.status) >= 0 ? s.status : 'draft',
       createdAt: s.createdAt || Date.now(),
       proxies: {},
+      files: cleanFiles(s.files),
       questions: []
     };
     Object.keys(s.proxies || {}).forEach(function (k) { if (k && s.proxies[k] && k !== s.proxies[k]) out.proxies[k] = String(s.proxies[k]); });
@@ -309,6 +324,7 @@ var SHARED = (function () {
         id: q.id || uid(6), type: type,
         text: String(q.text || '').trim().slice(0, 2000),
         majority: type !== 'text' && MAJORITY[q.majority] ? q.majority : 'none',
+        files: cleanFiles(q.files),
         media: q.media && q.media.url ? { type: ['video', 'youtube'].indexOf(q.media.type) >= 0 ? q.media.type : 'image', url: String(q.media.url), fileId: q.media.fileId || '' } : null,
         options: opts
       });
@@ -429,6 +445,10 @@ var SHARED = (function () {
       (s.problem ? '<div style="font-size:13px;color:#475569;margin-top:6px;white-space:pre-wrap">' + esc(s.problem.length > 400 ? s.problem.slice(0, 400) + '…' : s.problem) + '</div>' : '') +
       '<div style="font-size:13px;color:#64748b;margin-top:8px">' + s.questions.length + (s.questions.length === 1 ? ' въпрос' : ' въпроса') +
       (o.deadlineText ? ' · краен срок: <b>' + esc(o.deadlineText) + '</b>' : '') + '</div></div>' +
+      (function () {
+        var all = (s.files || []).slice(); (s.questions || []).forEach(function (q) { (q.files || []).forEach(function (f) { all.push(f); }); });
+        return all.length ? '<p style="margin:0 0 6px">📎 Приложени документи:</p><ul style="margin:0 0 14px;padding-left:18px">' + all.map(function (f) { return '<li><a href="' + esc(f.url) + '" style="color:#3b6cf6">' + esc(f.name) + '</a></li>'; }).join('') + '</ul>' : '';
+      })() +
       '<p style="margin:0">Това е <b>вашият личен линк</b> – с него системата знае кой е обектът и не е нужно да въвеждате код:</p>' + btn(o.link, 'Гласувай за ' + o.objectName) +
       (o.code ? '<p style="font-size:13px;color:#64748b;margin-top:14px">Личен код на обекта: <b style="letter-spacing:.1em">' + esc(o.code) + '</b> (ако отваряте общия линк). Не го споделяйте.</p>' : '') +
       (o.reminder && o.progress ? '<p style="font-size:13px;color:#64748b">До момента са гласували ' + esc(o.progress) + '.</p>' : '');
@@ -475,6 +495,8 @@ var SHARED = (function () {
     meta.push('изготвен: ' + esc(o.nowText));
     h.push('<div style="font-size:9.5px;color:' + MUTE + ';margin-top:4px">' + meta.join(' · ') + '</div>');
     if (s.problem) h.push('<table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;margin-top:12px"><tr><td style="background-color:' + SOFT + ';border-left:4px solid ' + BLUE + ';padding:10px 12px;' + F + 'font-size:11px;white-space:pre-wrap">' + esc(s.problem) + '</td></tr></table>');
+    var atts = (s.files || []).slice(); (s.questions || []).forEach(function (q, qi) { (q.files || []).forEach(function (f) { atts.push({ name: f.name + ' (към въпрос ' + (qi + 1) + ')' }); }); });
+    if (atts.length) h.push('<div style="margin-top:8px;font-size:10px;color:' + MUTE + '">📎 Приложения: ' + atts.map(function (f) { return esc(f.name); }).join('; ') + '</div>');
     // въпроси
     h.push('<div style="font-size:14px;font-weight:bold;margin:18px 0 4px;color:' + BLUE + '">Резултати по въпроси</div>');
     r.questions.forEach(function (q, i) {
@@ -953,7 +975,7 @@ function demoApi() {
     setProp: function (k, v) { db.props[k] = v; },
     scriptUrl: function () { return ''; },
     sheetUrl: function () { return ''; },
-    uploadMedia: function (f) { return { type: /^video\//.test(f.mime) ? 'video' : 'image', url: f.localUrl, fileId: '' }; },
+    uploadMedia: function (f) { if (/pdf/i.test(f.mime)) return { type: 'pdf', url: f.localUrl, preview: f.localUrl, name: f.name, size: Math.round(f.data.length * 0.75), fileId: '' }; return { type: /^video\//.test(f.mime) ? 'video' : 'image', url: f.localUrl, fileId: '' }; },
     makePdf: function () { return null; },
     lock: function (fn) { return fn(); },
     fmt: fmtTime,
@@ -1001,6 +1023,15 @@ function mediaHtml(m) {
   return '<div class="media"><img src="' + u + '" alt="" loading="lazy"></div>';
 }
 function ytEmbed(url) { var m = String(url).match(/(?:youtu\.be\/|v=|shorts\/|embed\/)([\w-]{11})/); return m ? 'https://www.youtube.com/embed/' + m[1] : null; }
+function fmtSize(b) { return b > 1048576 ? (b / 1048576).toFixed(1).replace('.', ',') + ' MB' : b ? Math.max(1, Math.round(b / 1024)) + ' KB' : ''; }
+function filesHtml(list, del) {
+  if (!list || !list.length) return '';
+  return '<div class="files">' + list.map(function (f, k) {
+    return '<div class="file"><div class="ficon">PDF</div><div class="fmeta"><b>' + E(f.name) + '</b><small>' + E(fmtSize(f.size)) + '</small></div>' +
+      (del ? '<button class="btn ghost sm icon" data-act="fdel" data-scope="' + E(del) + '" data-k="' + k + '" title="Премахни">✕</button>'
+        : '<div class="fbtns">' + (f.preview ? '<button class="btn ghost sm" data-act="fprev" data-url="' + E(f.preview) + '">👁 Преглед</button>' : '') + '<a class="btn ghost sm" href="' + E(f.url) + '" target="_blank" rel="noopener">Отвори ↗</a></div>') + '</div>';
+  }).join('') + '</div>';
+}
 function shortName(n) { return String(n).replace(/^Апартамент\s*/i, 'Ап ').replace(/^Гараж\s*/i, 'Гараж '); }
 function objName(id) { var o = ((UI.data && UI.data.objects) || UI.objs || []).filter(function (x) { return x.id === id; })[0]; return o ? o.name : id; }
 function saveCode(c) { UI.code = c; try { if (c) localStorage.setItem('es124_code', c); else localStorage.removeItem('es124_code'); } catch (e) {} }
@@ -1097,6 +1128,7 @@ function renderSurvey() {
   var meVoted = me && d.voted.indexOf(me.id) >= 0 && !edit;
   var h = '<div class="card hero fade-in">' + statusChip(s, d.open) + '<h1>' + E(s.title) + '</h1><div class="muted small">' + E(fmtDate(s.date)) + (s.deadline ? ' · краен срок: ' + E(fmtTime(Date.parse(s.deadline))) : '') + '</div>';
   if (s.problem) h += '<div class="problem">' + E(s.problem) + '</div>';
+  h += filesHtml(s.files);
   h += '<div class="chips"><span class="chip">Кворум: ' + P(s.quorum, 0) + ' ид. части</span>' + (s.editMinutes && !s.imported ? '<span class="chip">Промяна на гласа до ' + s.editMinutes + ' мин.</span>' : '') +
     (s.anonymous ? '<span class="chip anon">🕶 Анонимна</span>' : '') + (s.requireCode ? '<span class="chip">🔑 С личен код</span>' : '') + (s.imported ? '<span class="chip gray">Прехвърлена от MS Forms</span>' : '') + '</div></div>';
 
@@ -1121,7 +1153,7 @@ function renderSurvey() {
     }
     h += '<div class="sec-t"><span class="n">' + step + '</span> Отговорете на въпросите</div>';
     s.questions.forEach(function (q, i) {
-      h += '<div class="card q fade-in"><div class="q-h"><div class="q-num">' + (i + 1) + '</div><div class="q-text">' + E(q.text) + '</div></div>' + mediaHtml(q.media);
+      h += '<div class="card q fade-in"><div class="q-h"><div class="q-num">' + (i + 1) + '</div><div class="q-text">' + E(q.text) + '</div></div>' + mediaHtml(q.media) + filesHtml(q.files);
       if (q.type === 'text') {
         h += '<textarea class="inp" style="margin-top:14px" data-text="' + E(q.id) + '" maxlength="2000" placeholder="Вашият отговор…">' + E(sel.answers[q.id] || '') + '</textarea>';
       } else {
@@ -1264,7 +1296,8 @@ function renderEditor() {
     '<div class="row"><label class="field"><span>Кворум (% идеални части)</span><input class="inp" type="number" min="0" max="100" step="1" data-f="quorum" value="' + E(s.quorum) + '"></label><label class="field"><span>Промяна на гласа (минути, 0 = без)</span><input class="inp" type="number" min="0" max="1440" step="5" data-f="editMinutes" value="' + E(s.editMinutes) + '"></label></div>' +
     '<label class="switch"><input type="checkbox" data-f="showResults"' + (s.showResults ? ' checked' : '') + '> Показвай резултатите на гласуващите</label>' +
     '<label class="switch"><input type="checkbox" data-f="requireCode"' + (s.requireCode ? ' checked' : '') + '> 🔑 Изисквай личен код (защита срещу гласуване от чуждо име)</label>' +
-    '<label class="switch"><input type="checkbox" data-f="anonymous"' + (s.anonymous ? ' checked' : '') + '> 🕶 Анонимна анкета (без имена и без видими отговори по обекти)</label></div>';
+    '<label class="switch"><input type="checkbox" data-f="anonymous"' + (s.anonymous ? ' checked' : '') + '> 🕶 Анонимна анкета (без имена и без видими отговори по обекти)</label>' +
+    '<div class="field"><span>📎 Документи към анкетата (оферти, договори…)</span>' + filesHtml(s.files, 's') + '<div class="tools"><label class="btn ghost sm" style="cursor:pointer">📎 Прикачи PDF<input type="file" accept="application/pdf,.pdf" data-act="upload" data-target="file-s" hidden></label></div></div></div>';
   h += '<div class="sec-t">Въпроси</div>';
   s.questions.forEach(function (q, i) {
     h += '<div class="aq" data-qi="' + i + '"><div class="aq-h"><b>Въпрос ' + (i + 1) + '</b><div class="tools" style="margin:0">' + (i > 0 ? '<button class="btn ghost sm icon" data-act="qup" data-i="' + i + '" title="Нагоре">↑</button>' : '') + '<button class="btn danger sm" data-act="qdel" data-i="' + i + '">Премахни</button></div></div>' +
@@ -1272,7 +1305,8 @@ function renderEditor() {
       '<div class="row" style="margin-top:10px"><label class="field" style="margin:0"><span>Вид</span><select class="dd" data-q="type" data-act="qtype" data-i="' + i + '">' + selOpts([['single', 'Един отговор'], ['multi', 'Няколко отговора'], ['text', 'Свободен текст']], q.type || 'single') + '</select></label>' +
       (q.type !== 'text' ? '<label class="field" style="margin:0"><span>Решение (по ЗУЕС)</span><select class="dd" data-q="majority">' + selOpts(Object.keys(SHARED.MAJORITY).map(function (k) { return [k, SHARED.MAJORITY[k].label]; }), q.majority || 'none') + '</select></label>' : '') + '</div>';
     h += q.media && q.media.url ? mediaHtml(q.media) + '<div class="tools"><button class="btn ghost sm" data-act="mdel" data-i="' + i + '">Махни медията</button></div>'
-      : '<div class="tools"><label class="btn ghost sm" style="cursor:pointer">📷 Снимка / GIF / клип<input type="file" accept="image/*,video/*" data-act="upload" data-i="' + i + '" hidden></label><button class="btn ghost sm" data-act="mlink" data-i="' + i + '">🔗 Линк (YouTube / снимка)</button></div>';
+      : '<div class="tools"><label class="btn ghost sm" style="cursor:pointer">📷 Снимка / GIF / клип<input type="file" accept="image/*,video/*" data-act="upload" data-target="media" data-i="' + i + '" hidden></label><button class="btn ghost sm" data-act="mlink" data-i="' + i + '">🔗 Линк (YouTube / снимка)</button></div>';
+    h += filesHtml(q.files, String(i)) + '<div class="tools"><label class="btn ghost sm" style="cursor:pointer">📎 Прикачи PDF (оферта)<input type="file" accept="application/pdf,.pdf" data-act="upload" data-target="file-q" data-i="' + i + '" hidden></label></div>';
     if (q.type !== 'text') {
       h += '<div style="margin-top:12px;font-size:13px;font-weight:700;color:var(--ink2)">Отговори</div>';
       q.options.forEach(function (o, k) { h += '<div class="aopt"><input class="inp" data-o="' + k + '" value="' + E(o.text) + '" placeholder="Отговор ' + (k + 1) + '"><button class="btn ghost sm icon" data-act="odel" data-i="' + i + '" data-k="' + k + '" title="Премахни">✕</button></div>'; });
@@ -1311,13 +1345,19 @@ function saveDraft(st) {
 }
 function uploadMedia(input) {
   var f = input.files && input.files[0]; if (!f) return;
-  var i = Number(input.getAttribute('data-i'));
-  if (f.size > 15 * 1024 * 1024) return toast('Файлът е над 15 MB. Качете клипа в YouTube и добавете линк.', true);
+  var i = Number(input.getAttribute('data-i')), target = input.getAttribute('data-target') || 'media';
+  if (target !== 'media' && !/pdf/i.test(f.type) && !/\.pdf$/i.test(f.name)) return toast('Изберете PDF файл.', true);
+  if (f.size > 15 * 1024 * 1024) return toast(target === 'media' ? 'Файлът е над 15 MB. Качете клипа в YouTube и добавете линк.' : 'PDF файлът е над 15 MB.', true);
   collectDraft(); toast('Качване…');
   var rd = new FileReader();
   rd.onload = function () {
-    API.adminUploadMedia(UI.key, { name: f.name, mime: f.type || 'application/octet-stream', data: String(rd.result).split(',')[1], localUrl: API.demo ? URL.createObjectURL(f) : undefined })
-      .then(function (m) { UI.draft.questions[i].media = m; renderEditor(); toast('Качено ✓'); }).catch(function (e) { toast(e.message, true); });
+    API.adminUploadMedia(UI.key, { name: f.name, mime: f.type || (/\.pdf$/i.test(f.name) ? 'application/pdf' : 'application/octet-stream'), data: String(rd.result).split(',')[1], localUrl: API.demo ? URL.createObjectURL(f) : undefined })
+      .then(function (m) {
+        if (target === 'media') UI.draft.questions[i].media = m;
+        else { var o = { name: f.name, url: m.url, preview: m.preview || '', fileId: m.fileId || '', size: m.size || f.size };
+          var list = target === 'file-s' ? (UI.draft.files = UI.draft.files || []) : (UI.draft.questions[i].files = UI.draft.questions[i].files || []); list.push(o); }
+        renderEditor(); toast('Качено ✓');
+      }).catch(function (e) { toast(e.message, true); });
   };
   rd.readAsDataURL(f);
 }
@@ -1683,6 +1723,9 @@ document.addEventListener('click', function (e) {
     case 'oadd': collectDraft(); UI.draft.questions[Number(b.getAttribute('data-i'))].options.push({ id: SHARED.uid(6), text: '' }); renderEditor(); break;
     case 'odel': collectDraft(); UI.draft.questions[Number(b.getAttribute('data-i'))].options.splice(Number(b.getAttribute('data-k')), 1); renderEditor(); break;
     case 'mdel': collectDraft(); UI.draft.questions[Number(b.getAttribute('data-i'))].media = null; renderEditor(); break;
+    case 'fdel': collectDraft(); var sc = b.getAttribute('data-scope'), fk = Number(b.getAttribute('data-k'));
+      (sc === 's' ? UI.draft.files : UI.draft.questions[Number(sc)].files).splice(fk, 1); renderEditor(); break;
+    case 'fprev': modal('📄 Преглед', '<iframe class="frame" src="' + E(b.getAttribute('data-url')) + '" allow="autoplay"></iframe><div class="hint">Ако прегледът не се зарежда, натиснете „Отвори ↗“.</div>', true); break;
     case 'mlink': mediaLink(Number(b.getAttribute('data-i'))); break;
     case 'padd': collectDraft(); var free = UI.objs.filter(function (o) { return !UI.draft.proxies[o.id]; })[0]; if (free) { UI.draft.proxies[free.id] = UI.objs.filter(function (o) { return o.id !== free.id; })[0].id; } renderEditor(); break;
     case 'pdel': collectDraft(); delete UI.draft.proxies[b.getAttribute('data-from')]; renderEditor(); break;
